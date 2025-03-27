@@ -4,26 +4,33 @@ const jwt = require('jsonwebtoken');
 const connectToDatabase = require('../models/db');
 const router = express.Router();
 const dotenv = require('dotenv');
-const pino = require('pino');  // Importar el registrador Pino
-//Tarea 1: Usar `body`, `validationResult` de `express-validator` para la validación de entrada
+const pino = require('pino');  // Import Pino logger
+
+//Task 1: Use the `body`,`validationResult` from `express-validator` for input validation
 const { body, validationResult } = require('express-validator');
-const logger = pino();  // Crear una instancia del registrador Pino
+
+
+const logger = pino();  // Create a Pino logger instance
+
 dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET;
+
 router.post('/register', async (req, res) => {
     try {
-      //Conectar a `secondChance` en MongoDB a través de `connectToDatabase` en `db.js`.
+      //Connect to `secondChance` in MongoDB through `connectToDatabase` in `db.js`.
       const db = await connectToDatabase();
       const collection = db.collection("users");
       const existingEmail = await collection.findOne({ email: req.body.email });
+
         if (existingEmail) {
-            logger.error('El id de correo electrónico ya existe');
-            return res.status(400).json({ error: 'El id de correo electrónico ya existe' });
+            logger.error('Email id already exists');
+            return res.status(400).json({ error: 'Email id already exists' });
         }
+
         const salt = await bcryptjs.genSalt(10);
         const hash = await bcryptjs.hash(req.body.password, salt);
         const email=req.body.email;
-        console.log('el correo es',email);
+        console.log('email is',email);
         const newUser = await collection.insertOne({
             email: req.body.email,
             firstName: req.body.firstName,
@@ -31,95 +38,115 @@ router.post('/register', async (req, res) => {
             password: hash,
             createdAt: new Date(),
         });
+
         const payload = {
             user: {
                 id: newUser.insertedId,
             },
         };
+
         const authtoken = jwt.sign(payload, JWT_SECRET);
-        logger.info('Usuario registrado con éxito');
+        logger.info('User registered successfully');
         res.json({ authtoken,email });
     } catch (e) {
         logger.error(e);
-        return res.status(500).send('Error interno del servidor');
+        return res.status(500).send('Internal server error');
     }
 });
+
 router.post('/login', async (req, res) => {
-    console.log("\n\n Dentro del inicio de sesión")
+    console.log("\n\n Inside login")
+
     try {
         // const collection = await connectToDatabase();
         const db = await connectToDatabase();
         const collection = db.collection("users");
         const theUser = await collection.findOne({ email: req.body.email });
+
         if (theUser) {
             let result = await bcryptjs.compare(req.body.password, theUser.password)
             if(!result) {
-                logger.error('Las contraseñas no coinciden');
-                return res.status(404).json({ error: 'Contraseña incorrecta' });
+                logger.error('Passwords do not match');
+                return res.status(404).json({ error: 'Wrong pasword' });
             }
             let payload = {
                 user: {
                     id: theUser._id.toString(),
                 },
             };
+
             const userName = theUser.firstName;
             const userEmail = theUser.email;
+
             const authtoken = jwt.sign(payload, JWT_SECRET);
-            logger.info('Usuario ha iniciado sesión con éxito');
+            logger.info('User logged in successfully');
             return res.status(200).json({ authtoken, userName, userEmail });
         } else {
-            logger.error('Usuario no encontrado');
-            return res.status(404).json({ error: 'Usuario no encontrado' });
+            logger.error('User not found');
+            return res.status(404).json({ error: 'User not found' });
         }
     } catch (e) {
         logger.error(e);
-        return res.status(500).json({ error: 'Error interno del servidor', details: e.message });
+        return res.status(500).json({ error: 'Internal server error', details: e.message });
       }
 });
-// API de actualización
+
+// update API
 router.put('/update', async (req, res) => {
-    // Tarea 2: Validar la entrada usando `validationResult` y devolver un mensaje apropiado si hay un error.
+    // Task 2: Validate the input using `validationResult` and return approiate message if there is an error.
+
     const errors = validationResult(req);
-    // Tarea 3: Comprobar si `email` está presente en el encabezado y lanzar un mensaje de error apropiado si no está presente.
+
+    // Task 3: Check if `email` is present in the header and throw an appropriate error message if not present.
     if (!errors.isEmpty()) {
-        logger.error('Errores de validación en la solicitud de actualización', errors.array());
+        logger.error('Validation errors in update request', errors.array());
         return res.status(400).json({ errors: errors.array() });
     }
+
     try {
         const email = req.headers.email;
+
         if (!email) {
-            logger.error('Correo electrónico no encontrado en los encabezados de la solicitud');
-            return res.status(400).json({ error: "Correo electrónico no encontrado en los encabezados de la solicitud" });
+            logger.error('Email not found in the request headers');
+            return res.status(400).json({ error: "Email not found in the request headers" });
         }
-        //Tarea 4: Conectar a MongoDB
+
+        //Task 4: Connect to MongoDB
         const db = await connectToDatabase();
         const collection = db.collection("users");
-        //Tarea 5: Encontrar las credenciales del usuario
+
+        //Task 5: Find user credentials
         const existingUser = await collection.findOne({ email });
+
         if (!existingUser) {
-            logger.error('Usuario no encontrado');
-            return res.status(404).json({ error: "Usuario no encontrado" });
+            logger.error('User not found');
+            return res.status(404).json({ error: "User not found" });
         }
+
         existingUser.firstName = req.body.name;
         existingUser.updatedAt = new Date();
-        //Tarea 6: Actualizar las credenciales del usuario en la base de datos
+
+        //Task 6: Update user credentials in DB
         const updatedUser = await collection.findOneAndUpdate(
             { email },
             { $set: existingUser },
             { returnDocument: 'after' }
         );
-        //Tarea 7: Crear autenticación JWT con user._id como carga útil usando la clave secreta del archivo .env
+
+        //Task 7: Create JWT authentication with user._id as payload using secret key from .env file
         const payload = {
             user: {
                 id: updatedUser._id.toString(),
             },
         };
+
         const authtoken = jwt.sign(payload, JWT_SECRET);
-        logger.info('Usuario actualizado con éxito');
+        logger.info('User updated successfully');
+
         res.json({ authtoken });
     } catch (error) {
         logger.error(error);
-        return res.status(500).send("Error interno del servidor");
+        return res.status(500).send("Internal Server Error");
     }
 });
 module.exports = router;
